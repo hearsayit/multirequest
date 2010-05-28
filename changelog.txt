@@ -1,0 +1,5 @@
+Release 1.0
+
+* Added: Handle requests by multi Curl queue
+* Added: Debug callbacks
+* Added: Example
