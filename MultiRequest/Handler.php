@@ -11,13 +11,10 @@ class MultiRequest_Handler {
 	protected $connectionsLimit = 60;
 	protected $defaultRequestsOptions = array ();
 	protected $queue;
-
-	protected $ACTIVE_QUEUE;
 	protected $total_bytes_transfered;
 	protected $total_requested_finished;
 	protected $exec_progres_handler;
 	protected $onRequestCompleteCallbacks = array ();
-
 	protected $mcurlHandle;
 	protected $activeRequests = array ();
 
