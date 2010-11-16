@@ -9,13 +9,16 @@ class MultiRequest_Session {
 	
 	protected $mrHandler;
 	protected $cookiesFilepath;
+	protected $lastRequest;
+	protected $enableAutoReferer;
 	protected $defaultHeaders = array();
 	protected $defaultCurlOptions = array();
 	protected $requestsCallbacks = array();
 
-	public function __construct(MultiRequest_Handler $mrHandler, $cookiesBasedir) {
+	public function __construct(MultiRequest_Handler $mrHandler, $cookiesBasedir, $enableAutoReferer = false) {
 		$this->mrHandler = $mrHandler;
 		$this->cookiesFilepath = tempnam($cookiesBasedir, '_');
+		$this->enableAutoReferer = $enableAutoReferer;
 	}
 
 	public function setDefaultCurlOptions(array $options) {
@@ -27,6 +30,8 @@ class MultiRequest_Session {
 	}
 
 	public function onRequestComplete(MultiRequest_Request $request, MultiRequest_Handler $mrHandler) {
+		$this->lastRequest = $request;
+		
 		$requestId = self::getRequestId($request);
 		if($this->requestsCallbacks[$requestId]) {
 			call_user_func_array($this->requestsCallbacks[$requestId], array($request, $this, $mrHandler));
@@ -36,7 +41,12 @@ class MultiRequest_Session {
 
 	public function request(MultiRequest_Request $request, $callback = null) {
 		$request->addCallback(array($this, 'onRequestComplete'));
+		
 		$request->setCookieStorage($this->cookiesFilepath);
+		if($this->enableAutoReferer && $this->lastRequest) {
+			$request->setCurlOption(CURLOPT_REFERER, $this->lastRequest->getUrl());
+		}
+		
 		foreach($this->defaultCurlOptions as $option => $value) {
 			$request->setCurlOption($option, $value);
 		}
@@ -60,6 +70,6 @@ class MultiRequest_Session {
 	}
 
 	public function __destruct() {
-		unlink($this->cookiesFilepath);
+		@unlink($this->cookiesFilepath);
 	}
 }

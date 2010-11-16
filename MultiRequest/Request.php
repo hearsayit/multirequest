@@ -11,9 +11,10 @@ class MultiRequest_Request {
 	protected $curlHandle;
 	protected $headers = array('Expect:');
 	protected $postData;
-	protected $curlOptions = array(CURLOPT_HEADER => 1, CURLOPT_RETURNTRANSFER => 1, CURLOPT_FOLLOWLOCATION => 3, CURLOPT_SSL_VERIFYPEER => 0, CURLOPT_SSL_VERIFYHOST => 0);
+	protected $curlOptions = array(CURLOPT_TIMEOUT => 60, CURLOPT_FAILONERROR => 1, CURLOPT_HEADER => 1, CURLOPT_RETURNTRANSFER => 1, CURLOPT_FOLLOWLOCATION => true, CURLOPT_SSL_VERIFYPEER => 0, CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_VERBOSE => 1);
 	protected $curlInfo;
-	protected $encoding = 'utf8';
+	protected $serverEncoding = 'UTF-8';
+	protected $clientEncoding = 'UTF-8';
 	protected $callbacks = array();
 	protected $responseHeaders = array();
 	protected $responseContent;
@@ -22,12 +23,20 @@ class MultiRequest_Request {
 		$this->url = $url;
 	}
 
+	public function setCharset($charset) {
+		$this->charsetg = $charset;
+	}
+
 	public function addHeader($header) {
 		$this->headers[] = $header;
 	}
 
 	public function setPostData($postData) {
 		$this->postData = $postData;
+	}
+
+	public function getPostData() {
+		return $this->postData;
 	}
 
 	public function setPostVar($var, $value) {
@@ -56,11 +65,11 @@ class MultiRequest_Request {
 			$curlOptions[CURLOPT_HTTPHEADER] = $this->headers;
 		}
 		if($this->postData) {
-			$postData = str_replace('+', '%20', http_build_query($this->postData));
-			if($this->encoding != 'utf8') {
-				$postData = mb_convert_encoding($postData, $this->encoding, 'UTF-8');
+			$postData = $this->postData;
+			if($this->clientEncoding != $this->serverEncoding) {
+				array_walk_recursive($postData, create_function('&$value', '$value = mb_convert_encoding($value, "' . $this->clientEncoding . '", "' . $this->serverEncoding . '");'));
 			}
-			$curlOptions[CURLOPT_POST] = 1;
+			$curlOptions[CURLOPT_POST] = true;
 			$curlOptions[CURLOPT_POSTFIELDS] = $postData;
 		}
 		
@@ -117,6 +126,9 @@ class MultiRequest_Request {
 		
 		$this->responseHeaders = $this->parseHeaders(substr($responseData, 0, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE)));
 		$this->responseContent = substr($responseData, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE));
+		if($this->clientEncoding != $this->serverEncoding) {
+			$this->responseContent = mb_convert_encoding($this->responseContent, $this->serverEncoding, $this->clientEncoding);
+		}
 		curl_close($this->curlHandle);
 		$this->callCallbacks($handler);
 	}
@@ -125,7 +137,7 @@ class MultiRequest_Request {
 		return $this->curlInfo;
 	}
 
-	public static function parseHeaders($headersString, $associative = false) {
+	protected function parseHeaders($headersString, $associative = false) {
 		$headers = array();
 		preg_match_all('/\n\s*((.*?)\s*\:\s*(.*?))[\r\n]/', $headersString, $m);
 		foreach($m[1] as $i => $header) {
@@ -139,7 +151,7 @@ class MultiRequest_Request {
 		return $headers;
 	}
 
-	public function getRespopnseCookies(&$deleted) {
+	public function getRespopnseCookies(&$deleted = null) {
 		$cookies = array();
 		$deleted = array();
 		foreach($this->getResponseHeaders() as $header) {
