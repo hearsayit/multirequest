@@ -93,10 +93,8 @@ class MultiRequest_Session {
 	}
 
 	public function clearCookie() {
-		static $cleared = false;
-		if($cleared) {
-			@unlink($this->cookiesFilepath);
-			$cleared = true;
+		if(file_exists($this->cookiesFilepath)) {
+			unlink($this->cookiesFilepath);
 		}
 	}
 

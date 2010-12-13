@@ -13,6 +13,7 @@ class MultiRequest_Request {
 	protected $callbacks;
 
 	protected $url;
+	protected $realUrl;
 	protected $curlHandle;
 	protected $headers = array('Expect:');
 	protected $getData;
@@ -28,12 +29,25 @@ class MultiRequest_Request {
 	protected static $clientsEncodings;
 
 	public function __construct($url) {
-		$this->url = $url;
 		$this->callbacks = new MultiRequest_Callbacks();
+		$this->url = $url;
+		$this->setUrl($url);
+	}
+
+	public function setUrl($url) {
+		$this->setCurlOption(CURLOPT_URL, $url);
 	}
 
 	public function getDomain() {
 		return parse_url($this->url, PHP_URL_HOST);
+	}
+
+	public function getBaseUrl() {
+		return parse_url($this->url, PHP_URL_SCHEME) . '://' . $this->getDomain();
+	}
+
+	public function getRealUrl() {
+		return $this->realUrl;
 	}
 
 	public function setEncoding($charset) {
@@ -65,6 +79,9 @@ class MultiRequest_Request {
 	}
 
 	public function setCurlOption($optionName, $value) {
+		if($optionName == CURLOPT_URL) {
+			$this->realUrl = $value;
+		}
 		$this->curlOptions[$optionName] = $value;
 	}
 
@@ -84,7 +101,7 @@ class MultiRequest_Request {
 	}
 
 	protected function initCurlHandle() {
-		$curlHandle = curl_init($this->getUrl());
+		$curlHandle = curl_init($this->url);
 		$curlOptions = $this->curlOptions;
 		$curlOptions[CURLINFO_HEADER_OUT] = true;
 
@@ -128,9 +145,13 @@ class MultiRequest_Request {
 
 	public function getCurlHandle() {
 		if(!$this->curlHandle) {
-			$this->curlHandle = $this->initCurlHandle();
+			$this->reinitCurlHandle();
 		}
 		return $this->curlHandle;
+	}
+
+	public function reinitCurlHandle() {
+		$this->curlHandle = $this->initCurlHandle();
 	}
 
 	public function getTime() {
@@ -141,20 +162,24 @@ class MultiRequest_Request {
 		return $this->curlInfo['http_code'];
 	}
 
-	public function notifyIsComplete(MultiRequest_Handler $handler) {
-		$this->curlInfo = curl_getinfo($this->curlHandle);
-		$responseData = curl_multi_getcontent($this->curlHandle);
+	public function initResponseDataFromHandler(MultiRequest_Handler $handler) {
+		$curlHandle = $this->getCurlHandle();
+		$this->curlInfo = curl_getinfo($curlHandle);
+		$responseData = curl_multi_getcontent($curlHandle);
 
-		$this->responseHeaders = substr($responseData, 0, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE));
-		$this->responseContent = substr($responseData, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE));
+		$this->responseHeaders = substr($responseData, 0, curl_getinfo($curlHandle, CURLINFO_HEADER_SIZE));
+		$this->responseContent = substr($responseData, curl_getinfo($curlHandle, CURLINFO_HEADER_SIZE));
 		$clientEncoding = $this->detectClientCharset($this->getResponseHeaders());
 		if($clientEncoding && $clientEncoding != $this->serverEncoding) {
 			self::$clientsEncodings[$this->getDomain()] = $clientEncoding;
 			$this->responseContent = mb_convert_encoding($this->responseContent, $this->serverEncoding, $clientEncoding);
 		}
-		if($this->curlHandle) {
-			@curl_close($this->curlHandle);
+		if($curlHandle) {
+			@curl_close($curlHandle);
 		}
+	}
+
+	public function notifyIsComplete(MultiRequest_Handler $handler) {
 		$this->callbacks->onComplete($this, $handler);
 
 		$failException = $this->getFailException();

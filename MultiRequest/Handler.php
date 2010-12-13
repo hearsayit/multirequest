@@ -138,7 +138,27 @@ class MultiRequest_Handler {
 					$completeRequest = $this->activeRequests[$completeRequestId];
 					unset($this->activeRequests[$completeRequestId]);
 					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
-					$this->notifyRequestComplete($completeRequest);
+					$completeRequest->initResponseDataFromHandler($this);
+
+					// check if response code is 301 or 302 and follow location
+					$ignoreNotification = false;
+					$completeRequestCode = $completeRequest->getCode();
+					if($completeRequestCode == 301 || $completeRequestCode == 302) {
+						$completeRequestOptions = $completeRequest->getCurlOptions();
+						if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
+							$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
+							$responseHeaders = $completeRequest->getResponseHeaders(true);
+							if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
+								$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
+								$completeRequest->reinitCurlHandle();
+								$this->pushRequestToQueue($completeRequest);
+								$ignoreNotification = true;
+							}
+						}
+					}
+					if(!$ignoreNotification) {
+						$this->notifyRequestComplete($completeRequest);
+					}
 					$mcurlIsActive = true;
 				}
 				else {
