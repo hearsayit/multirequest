@@ -6,39 +6,71 @@
  *
  */
 class MultiRequest_Handler {
-	
-	protected $timeLimit = 60;
-	protected $connectionsLimit = 60;
-	protected $defaultRequestsOptions = array();
+
+	/**
+	 * @var MultiRequest_RequestsDefaults
+	 */
+	protected $requestsDefaults;
+
+	/**
+	 * @var MultiRequest_Callbacks
+	 */
+	protected $callbacks;
+
+	/**
+	 * @var MultiRequest_Queue
+	 */
 	protected $queue;
-	protected $total_bytes_transfered;
-	protected $total_requested_finished;
-	protected $exec_progres_handler;
-	protected $onRequestCompleteCallbacks = array();
+
+	protected $connectionsLimit = 60;
+	protected $totalTytesTransfered;
 	protected $isActive;
+	protected $isStarted;
+	protected $isStopped;
 	protected $activeRequests = array();
+	protected $requestingDelay = 0;
 
 	public function __construct() {
 		$this->queue = new MultiRequest_Queue();
+		$this->requestsDefaults = new MultiRequest_Defaults();
+		$this->callbacks = new MultiRequest_Callbacks();
+	}
+
+	public function getQueue() {
+		return $this->queue;
+	}
+
+	public function setRequestingDelay($milliseconds) {
+		$this->requestingDelay = $milliseconds * 1000;
+	}
+
+	public function onRequestComplete($callback) {
+		$this->callbacks->add(__FUNCTION__, $callback);
+		return $this;
+	}
+
+	protected function notifyRequestComplete(MultiRequest_Request $request) {
+		$request->notifyIsComplete($this);
+		$this->callbacks->onRequestComplete($request, $this);
+	}
+
+	/**
+	 * @return MultiRequest_Request
+	 */
+	public function requestsDefaults() {
+		return $this->requestsDefaults;
+	}
+
+	public function isActive() {
+		return $this->isActive;
+	}
+
+	public function isStarted() {
+		return $this->isStarted;
 	}
 
 	public function setConnectionsLimit($connectionsCount) {
 		$this->connectionsLimit = $connectionsCount;
-	}
-
-	public function setTimeLimit($timeLimit) {
-		$this->timeLimit = $timeLimit;
-	}
-
-	public function addDefaultRequestsOption($optionName, $value) {
-		$this->defaultRequestsOptions[$optionName] = $value;
-	}
-
-	public function addOnRequestCompleteCallback($callback) {
-		if(!is_callable(($callback))) {
-			throw new Exception('Callback is not callable');
-		}
-		$this->onRequestCompleteCallbacks[] = $callback;
 	}
 
 	public function getRequestsInQueueCount() {
@@ -49,82 +81,80 @@ class MultiRequest_Handler {
 		return count($this->activeRequests);
 	}
 
+	public function stop() {
+		$this->isStopped = true;
+	}
+
+	public function activate() {
+		$this->isStopped = false;
+		$this->start();
+	}
+
 	public function pushRequestToQueue(MultiRequest_Request $request) {
 		$this->queue->push($request);
 	}
 
 	protected function sendRequestToMultiCurl($mcurlHandle, MultiRequest_Request $request) {
-		foreach($this->defaultRequestsOptions as $option => $value) {
-			$request->setCurlOption($option, $value);
-		}
+		$this->requestsDefaults->applyToRequest($request);
 		curl_multi_add_handle($mcurlHandle, $request->getCurlHandle());
 	}
 
-	protected function handleCompleteRequest($mcurlHandle, MultiRequest_Request $request) {
-		curl_multi_remove_handle($mcurlHandle, $request->getCurlHandle());
-		$request->notifyIsComplete($this);
-		foreach($this->onRequestCompleteCallbacks as $callback) {
-			call_user_func_array($callback, array($request, $this));
-		}
-	}
-
-	public function exec() {
-		if($this->isActive) {
+	public function start() {
+		if($this->isActive || $this->isStopped) {
 			return;
 		}
 		$this->isActive = true;
-		
+		$this->isStarted = true;
+
 		try {
-			
-			$oldTimeLimit = ini_get('max_execution_time');
-			set_time_limit(0);
-			$startTime = time();
-			
+
 			$mcurlHandle = curl_multi_init();
 			$mcurlStatus = null;
 			$mcurlIsActive = false;
-			
+
 			do {
-				
+
 				if(count($this->activeRequests) < $this->connectionsLimit) {
-					for($i = $this->connectionsLimit - count($this->activeRequests); $i; $i --) {
+					for($i = $this->connectionsLimit - count($this->activeRequests); $i > 0; $i --) {
 						$request = $this->queue->pop();
 						if($request) {
 							$this->sendRequestToMultiCurl($mcurlHandle, $request);
 							$this->activeRequests[$request->getId()] = $request;
 						}
+						else {
+							break;
+						}
 					}
 				}
-				
+
 				$mcurlStatus = curl_multi_exec($mcurlHandle, $mcurlIsActive);
 				if($mcurlIsActive && curl_multi_select($mcurlHandle, 3) == -1) {
 					throw new Exception('There are some errors in multi curl requests');
 				}
-				
+
 				$completeCurlInfo = curl_multi_info_read($mcurlHandle);
 				if($completeCurlInfo !== false) {
 					$completeRequestId = MultiRequest_Request::getRequestIdByCurlHandle($completeCurlInfo['handle']);
 					$completeRequest = $this->activeRequests[$completeRequestId];
 					unset($this->activeRequests[$completeRequestId]);
-					$this->handleCompleteRequest($mcurlHandle, $completeRequest);
+					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
+					$this->notifyRequestComplete($completeRequest);
 					$mcurlIsActive = true;
 				}
-				
-				if($this->timeLimit && time() - $startTime > $this->timeLimit) {
-					set_time_limit($oldTimeLimit);
-					throw new Exception('Exec time limit expired');
+				else {
+					usleep($this->requestingDelay);
 				}
-			
 			}
-			while($mcurlStatus === CURLM_CALL_MULTI_PERFORM || $mcurlIsActive);
-		
+			while(!$this->isStopped && ($mcurlStatus === CURLM_CALL_MULTI_PERFORM || $mcurlIsActive));
 		}
 		catch(Exception $exception) {
 		}
-		set_time_limit($oldTimeLimit);
 		$this->isActive = false;
-		curl_multi_close($mcurlHandle);
-		
+		if($mcurlHandle) {
+			@curl_multi_close($mcurlHandle);
+		}
+		$this->callbacks->onComplete($this);
+
 		if(!empty($exception)) {
 			throw $exception;
 		}

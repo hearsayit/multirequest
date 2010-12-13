@@ -6,70 +6,102 @@
  *
  */
 class MultiRequest_Session {
-	
+
+	/**
+	 * @var MultiRequest_RequestsDefaults
+	 */
+	protected $requestsDefaults;
+
+	/**
+	 * @var MultiRequest_Callbacks
+	 */
+	protected $callbacks;
+
 	protected $mrHandler;
 	protected $cookiesFilepath;
 	protected $lastRequest;
+	protected $enableAutoStart;
 	protected $enableAutoReferer;
-	protected $defaultHeaders = array();
-	protected $defaultCurlOptions = array();
-	protected $requestsCallbacks = array();
+	protected $requestsDelay;
 
-	public function __construct(MultiRequest_Handler $mrHandler, $cookiesBasedir, $enableAutoReferer = false) {
+	public function __construct(MultiRequest_Handler $mrHandler, $cookiesBasedir, $enableAutoReferer = false, $requestsDelay = 0) {
+		$this->callbacks = new MultiRequest_Callbacks();
 		$this->mrHandler = $mrHandler;
-		$this->cookiesFilepath = tempnam($cookiesBasedir, '_');
 		$this->enableAutoReferer = $enableAutoReferer;
+		$this->requestsDelay = $requestsDelay;
+		$this->requestsDefaults = new MultiRequest_Defaults();
+
+		$this->cookiesFilepath = tempnam($cookiesBasedir, '_');
+		register_shutdown_function(array($this, 'clearCookie'));
 	}
 
-	public function setDefaultCurlOptions(array $options) {
-		$this->defaultCurlOptions = $options;
+	/**
+	 * @return MultiRequest_Handler
+	 */
+	public function getMrHandler() {
+		return $this->mrHandler;
 	}
 
-	public function setDefaultHeaders(array $headers) {
-		$this->defaultHeaders = $headers;
+	public function buildRequest($url) {
+		$request = new MultiRequest_Request($url);
+		$request->_session = $this;
+		return $request;
 	}
 
-	public function onRequestComplete(MultiRequest_Request $request, MultiRequest_Handler $mrHandler) {
+	/**
+	 * @return MultiRequest_Request
+	 */
+	public function requestsDefaults() {
+		return $this->requestsDefaults;
+	}
+
+	public function onRequestComplete($callback) {
+		$this->callbacks->add(__FUNCTION__, $callback);
+		return $this;
+	}
+
+	public function notifyRequestIsComplete(MultiRequest_Request $request, MultiRequest_Handler $mrHandler) {
 		$this->lastRequest = $request;
-		
-		$requestId = self::getRequestId($request);
-		if($this->requestsCallbacks[$requestId]) {
-			call_user_func_array($this->requestsCallbacks[$requestId], array($request, $this, $mrHandler));
-			unset($this->requestsCallbacks[$requestId]);
-		}
+		$this->callbacks->onRequestComplete($request, $this, $mrHandler);
 	}
 
-	public function request(MultiRequest_Request $request, $callback = null) {
-		$request->addCallback(array($this, 'onRequestComplete'));
-		
-		$request->setCookieStorage($this->cookiesFilepath);
+	public function start() {
+		$this->enableAutoStart = true;
+		$this->mrHandler->start();
+	}
+
+	public function stop() {
+		$this->enableAutoStart = false;
+	}
+
+	public function request(MultiRequest_Request $request) {
+		if($this->requestsDelay) {
+			sleep($this->requestsDelay);
+		}
+		$request->onComplete(array($this, 'notifyRequestIsComplete'));
+
+		$this->requestsDefaults->applyToRequest($request);
+		$request->setCookiesStorage($this->cookiesFilepath);
 		if($this->enableAutoReferer && $this->lastRequest) {
 			$request->setCurlOption(CURLOPT_REFERER, $this->lastRequest->getUrl());
 		}
-		
-		foreach($this->defaultCurlOptions as $option => $value) {
-			$request->setCurlOption($option, $value);
-		}
-		foreach($this->defaultHeaders as $header) {
-			$request->addHeader($header);
-		}
-		
-		if($callback && !is_callable($callback)) {
-			throw new Exception('Wrong callback');
-		}
-		$this->requestsCallbacks[self::getRequestId($request)] = $callback;
-		
-		$id = self::getRequestId($request);
-		$this->requestsCallbacks[$id] = $callback;
+
 		$this->mrHandler->pushRequestToQueue($request);
-		$this->mrHandler->exec();
+		if($this->enableAutoStart) {
+			$this->mrHandler->start();
+		}
 	}
 
-	protected static function getRequestId(MultiRequest_Request $request) {
-		return spl_object_hash($request);
+	public function clearCookie() {
+		static $cleared = false;
+		if($cleared) {
+			@unlink($this->cookiesFilepath);
+			$cleared = true;
+		}
 	}
 
 	public function __destruct() {
-		@unlink($this->cookiesFilepath);
+		$this->clearCookie();
 	}
 }
+

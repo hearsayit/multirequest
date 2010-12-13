@@ -7,7 +7,7 @@
  */
 class MultiRequest_Queue {
 
-	protected $requests = array ();
+	protected $requests = array();
 
 	public function push(MultiRequest_Request $request) {
 		$this->requests[] = $request;
@@ -19,5 +19,9 @@ class MultiRequest_Queue {
 
 	public function count() {
 		return count($this->requests);
+	}
+
+	public function clear() {
+		$this->requests = array();
 	}
 }

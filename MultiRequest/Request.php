@@ -6,29 +6,50 @@
  *
  */
 class MultiRequest_Request {
-	
+
+	/**
+	 * @var MultiRequest_Callbacks
+	 */
+	protected $callbacks;
+
 	protected $url;
 	protected $curlHandle;
 	protected $headers = array('Expect:');
+	protected $getData;
 	protected $postData;
-	protected $curlOptions = array(CURLOPT_TIMEOUT => 60, CURLOPT_FAILONERROR => 1, CURLOPT_HEADER => 1, CURLOPT_RETURNTRANSFER => 1, CURLOPT_FOLLOWLOCATION => true, CURLOPT_SSL_VERIFYPEER => 0, CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_VERBOSE => 1);
+	protected $curlOptions = array(CURLOPT_TIMEOUT => 3600, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_FAILONERROR => true, CURLOPT_FRESH_CONNECT => true, CURLOPT_HEADER => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 4, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false, CURLOPT_FORBID_REUSE => true, CURLOPT_VERBOSE => true, CURLOPT_MAXCONNECTS => 10);
 	protected $curlInfo;
-	protected $serverEncoding = 'UTF-8';
-	protected $clientEncoding = 'UTF-8';
-	protected $callbacks = array();
-	protected $responseHeaders = array();
+	protected $serverEncoding = 'utf-8';
+	protected $defaultClientEncoding = 'utf-8';
+	protected $responseHeaders;
+	protected $responseHeadersList = array();
 	protected $responseContent;
+
+	protected static $clientsEncodings;
 
 	public function __construct($url) {
 		$this->url = $url;
+		$this->callbacks = new MultiRequest_Callbacks();
 	}
 
-	public function setCharset($charset) {
+	public function getDomain() {
+		return parse_url($this->url, PHP_URL_HOST);
+	}
+
+	public function setEncoding($charset) {
 		$this->charsetg = $charset;
 	}
 
 	public function addHeader($header) {
 		$this->headers[] = $header;
+	}
+
+	public function addHeaders($headers) {
+		$this->headers = array_merge($this->headers, $headers);
+	}
+
+	public function setGetData($getData) {
+		$this->getData = $getData;
 	}
 
 	public function setPostData($postData) {
@@ -43,42 +64,54 @@ class MultiRequest_Request {
 		$this->postData[$var] = $value;
 	}
 
-	public function __set($var, $value) {
-		$this->setPostVar($var, $value);
+	public function setCurlOption($optionName, $value) {
+		$this->curlOptions[$optionName] = $value;
 	}
 
-	public function curlSetOpt($option, $value) {
-		$this->curlOptions[$option] = $value;
+	public function getCurlOptions() {
+		return $this->curlOptions;
 	}
 
-	public function setCookieStorage($filepath) {
+	public function addCurlOptions(array $options) {
+		foreach($options as $option => $value) {
+			$this->curlOptions[$option] = $value;
+		}
+	}
+
+	public function setCookiesStorage($filepath) {
 		$this->curlOptions[CURLOPT_COOKIEJAR] = $filepath;
 		$this->curlOptions[CURLOPT_COOKIEFILE] = $filepath;
 	}
 
 	protected function initCurlHandle() {
-		$curlHandle = curl_init($this->url);
+		$curlHandle = curl_init($this->getUrl());
 		$curlOptions = $this->curlOptions;
 		$curlOptions[CURLINFO_HEADER_OUT] = true;
-		
+
 		if($this->headers) {
 			$curlOptions[CURLOPT_HTTPHEADER] = $this->headers;
 		}
 		if($this->postData) {
 			$postData = $this->postData;
-			if($this->clientEncoding != $this->serverEncoding) {
-				array_walk_recursive($postData, create_function('&$value', '$value = mb_convert_encoding($value, "' . $this->clientEncoding . '", "' . $this->serverEncoding . '");'));
+
+			$clientEncoding = isset(self::$clientsEncodings[$this->getDomain()]) ? self::$clientsEncodings[$this->getDomain()] : $this->defaultClientEncoding;
+			if($clientEncoding != $this->serverEncoding) {
+				array_walk_recursive($postData, create_function('&$value', '$value = mb_convert_encoding($value, "' . $clientEncoding . '", "' . $this->serverEncoding . '");'));
 			}
 			$curlOptions[CURLOPT_POST] = true;
 			$curlOptions[CURLOPT_POSTFIELDS] = $postData;
+			$this->addHeader('Content-Type:	application/x-www-form-urlencoded; charset=' . $clientEncoding);
 		}
-		
+
 		curl_setopt_array($curlHandle, $curlOptions);
 		return $curlHandle;
 	}
 
-	public function setCurlOption($optionName, $value) {
-		$this->curlOptions[$optionName] = $value;
+	protected function detectClientCharset($headers) {
+		if(isset($this->curlInfo['content_type']) && preg_match('/charset\s*=\s*([\w\-\d]+)/i', $this->curlInfo['content_type'], $m)) {
+			return strtolower($m[1]);
+		}
+		return $this->defaultClientEncoding;
 	}
 
 	public function getId() {
@@ -90,7 +123,7 @@ class MultiRequest_Request {
 	}
 
 	public function getUrl() {
-		return $this->url;
+		return $this->url . ($this->getData ? (strstr($this->url, '?') === false ? '?' : '&') . http_build_query($this->getData) : '');
 	}
 
 	public function getCurlHandle() {
@@ -108,29 +141,60 @@ class MultiRequest_Request {
 		return $this->curlInfo['http_code'];
 	}
 
-	public function addCallback($callback) {
-		if(!is_callable($callback)) {
-			throw new Exception('Wrong callback');
-		}
-		$this->callbacks[] = $callback;
-	}
-
-	protected function callCallbacks(MultiRequest_Handler $handler) {
-		foreach($this->callbacks as $callback)
-			call_user_func_array($callback, array($this, $handler));
-	}
-
 	public function notifyIsComplete(MultiRequest_Handler $handler) {
 		$this->curlInfo = curl_getinfo($this->curlHandle);
 		$responseData = curl_multi_getcontent($this->curlHandle);
-		
-		$this->responseHeaders = $this->parseHeaders(substr($responseData, 0, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE)));
+
+		$this->responseHeaders = substr($responseData, 0, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE));
 		$this->responseContent = substr($responseData, curl_getinfo($this->curlHandle, CURLINFO_HEADER_SIZE));
-		if($this->clientEncoding != $this->serverEncoding) {
-			$this->responseContent = mb_convert_encoding($this->responseContent, $this->serverEncoding, $this->clientEncoding);
+		$clientEncoding = $this->detectClientCharset($this->getResponseHeaders());
+		if($clientEncoding && $clientEncoding != $this->serverEncoding) {
+			self::$clientsEncodings[$this->getDomain()] = $clientEncoding;
+			$this->responseContent = mb_convert_encoding($this->responseContent, $this->serverEncoding, $clientEncoding);
 		}
-		curl_close($this->curlHandle);
-		$this->callCallbacks($handler);
+		if($this->curlHandle) {
+			@curl_close($this->curlHandle);
+		}
+		$this->callbacks->onComplete($this, $handler);
+
+		$failException = $this->getFailException();
+		if($failException) {
+			$this->notifyIsFailed($failException, $handler);
+		}
+		else {
+			$this->notifyIsSuccess($handler);
+		}
+	}
+
+	public function onComplete($callback) {
+		$this->callbacks->add(__FUNCTION__, $callback);
+		return $this;
+	}
+
+	public function onFailed($callback) {
+		$this->callbacks->add(__FUNCTION__, $callback);
+		return $this;
+	}
+
+	public function onSuccess($callback) {
+		$this->callbacks->add(__FUNCTION__, $callback);
+		return $this;
+	}
+
+	public function notifyIsSuccess(MultiRequest_Handler $handler) {
+		$this->callbacks->onSuccess($this, $handler);
+	}
+
+	public function notifyIsFailed(MultiRequest_Exception $exception, MultiRequest_Handler $handler) {
+		$this->callbacks->onFailed($this, $exception, $handler);
+	}
+
+	public function getFailException() {
+		$responseCode = $this->getCode();
+		$successCodes = array(200, 204);
+		if(!in_array($responseCode, $successCodes)) {
+			return new MultiRequest_FailedResponse('Response failed with code "' . $responseCode . '"');
+		}
 	}
 
 	public function getCurlInfo() {
@@ -168,14 +232,24 @@ class MultiRequest_Request {
 	}
 
 	public function getRequestHeaders() {
-		return $this->curlInfo ? $this->parseHeaders($this->curlInfo['request_header']) : $this->parseHeaders(implode("\n", $this->headers));
+		return isset($this->curlInfo['request_header']) ? $this->parseHeaders($this->curlInfo['request_header']) : $this->parseHeaders(implode("\n", $this->headers));
 	}
 
-	public function getResponseHeaders() {
-		return $this->responseHeaders;
+	public function getResponseHeaders($assoc = false) {
+		return $this->parseHeaders($this->responseHeaders, $assoc);
 	}
 
 	public function getContent() {
 		return $this->responseContent;
 	}
 }
+
+class MultiRequest_Exception extends Exception {
+}
+
+class MultiRequest_FailedConnection extends MultiRequest_Exception {
+}
+
+class MultiRequest_FailedResponse extends MultiRequest_Exception {
+}
+
