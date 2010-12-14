@@ -108,12 +108,11 @@ class MultiRequest_Handler {
 
 		try {
 
-			$mcurlHandle = curl_multi_init();
-			$mcurlStatus = null;
-			$mcurlIsActive = false;
+			$this->mcurlHandle = $mcurlHandle = curl_multi_init();
 
 			do {
 
+				// send requests from queue to CURL
 				if(count($this->activeRequests) < $this->connectionsLimit) {
 					for($i = $this->connectionsLimit - count($this->activeRequests); $i > 0; $i --) {
 						$request = $this->queue->pop();
@@ -127,56 +126,55 @@ class MultiRequest_Handler {
 					}
 				}
 
-				$mcurlStatus = curl_multi_exec($mcurlHandle, $mcurlIsActive);
-				if($mcurlIsActive && curl_multi_select($mcurlHandle, 3) == -1) {
-					throw new Exception('There are some errors in multi curl requests');
-				}
+				while(CURLM_CALL_MULTI_PERFORM === curl_multi_exec($mcurlHandle));
 
-				$completeCurlInfo = curl_multi_info_read($mcurlHandle);
-				if($completeCurlInfo !== false) {
-					$completeRequestId = MultiRequest_Request::getRequestIdByCurlHandle($completeCurlInfo['handle']);
-					$completeRequest = $this->activeRequests[$completeRequestId];
-					unset($this->activeRequests[$completeRequestId]);
-					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
-					$completeRequest->initResponseDataFromHandler($this);
+				// check complete requests
+				if(curl_multi_select($mcurlHandle, 1) >= 0) {
+					while($completeCurlInfo = curl_multi_info_read($mcurlHandle)) {
+						$completeRequestId = MultiRequest_Request::getRequestIdByCurlHandle($completeCurlInfo['handle']);
+						$completeRequest = $this->activeRequests[$completeRequestId];
+						unset($this->activeRequests[$completeRequestId]);
+						curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
+						$completeRequest->initResponseDataFromHandler($this);
 
-					// check if response code is 301 or 302 and follow location
-					$ignoreNotification = false;
-					$completeRequestCode = $completeRequest->getCode();
-					if($completeRequestCode == 301 || $completeRequestCode == 302) {
-						$completeRequestOptions = $completeRequest->getCurlOptions();
-						if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
-							$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
-							$responseHeaders = $completeRequest->getResponseHeaders(true);
-							if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
-								$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
-								$completeRequest->reinitCurlHandle();
-								$this->pushRequestToQueue($completeRequest);
-								$ignoreNotification = true;
+						// check if response code is 301 or 302 and follow location
+						$ignoreNotification = false;
+						$completeRequestCode = $completeRequest->getCode();
+
+						if($completeRequestCode == 301 || $completeRequestCode == 302) {
+							$completeRequestOptions = $completeRequest->getCurlOptions();
+							if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
+								$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
+								$responseHeaders = $completeRequest->getResponseHeaders(true);
+								if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
+									$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
+									$completeRequest->reinitCurlHandle();
+									$this->pushRequestToQueue($completeRequest);
+									$ignoreNotification = true;
+								}
 							}
 						}
+						if(!$ignoreNotification) {
+							$this->notifyRequestComplete($completeRequest);
+						}
 					}
-					if(!$ignoreNotification) {
-						$this->notifyRequestComplete($completeRequest);
-					}
-					$mcurlIsActive = true;
-				}
-				else {
-					usleep($this->requestingDelay);
 				}
 			}
-			while(!$this->isStopped && ($mcurlStatus === CURLM_CALL_MULTI_PERFORM || $mcurlIsActive));
+			while(!$this->isStopped && ($this->activeRequests || $this->queue->count()));
 		}
 		catch(Exception $exception) {
 		}
+
 		$this->isActive = false;
-		if($mcurlHandle) {
-			@curl_multi_close($mcurlHandle);
+
+		if($mcurlHandle && is_resource($mcurlHandle)) {
+			curl_multi_close($mcurlHandle);
 		}
-		$this->callbacks->onComplete($this);
 
 		if(!empty($exception)) {
 			throw $exception;
 		}
+
+		$this->callbacks->onComplete($this);
 	}
 }

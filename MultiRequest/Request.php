@@ -18,13 +18,14 @@ class MultiRequest_Request {
 	protected $headers = array('Expect:');
 	protected $getData;
 	protected $postData;
-	protected $curlOptions = array(CURLOPT_TIMEOUT => 3600, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_FAILONERROR => true, CURLOPT_FRESH_CONNECT => true, CURLOPT_HEADER => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 4, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false, CURLOPT_FORBID_REUSE => true, CURLOPT_VERBOSE => true, CURLOPT_MAXCONNECTS => 10);
+	protected $curlOptions = array(CURLOPT_TIMEOUT => 3600, CURLOPT_CONNECTTIMEOUT => 200, CURLOPT_FAILONERROR => true, CURLOPT_FRESH_CONNECT => true, CURLOPT_HEADER => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 10, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false, CURLOPT_FORBID_REUSE => true, CURLOPT_VERBOSE => true, CURLOPT_MAXCONNECTS => 1);
 	protected $curlInfo;
 	protected $serverEncoding = 'utf-8';
 	protected $defaultClientEncoding = 'utf-8';
 	protected $responseHeaders;
 	protected $responseHeadersList = array();
 	protected $responseContent;
+	protected $error;
 
 	protected static $clientsEncodings;
 
@@ -165,6 +166,7 @@ class MultiRequest_Request {
 	public function initResponseDataFromHandler(MultiRequest_Handler $handler) {
 		$curlHandle = $this->getCurlHandle();
 		$this->curlInfo = curl_getinfo($curlHandle);
+		$this->error = curl_error($curlHandle);
 		$responseData = curl_multi_getcontent($curlHandle);
 
 		$this->responseHeaders = substr($responseData, 0, curl_getinfo($curlHandle, CURLINFO_HEADER_SIZE));
@@ -174,8 +176,8 @@ class MultiRequest_Request {
 			self::$clientsEncodings[$this->getDomain()] = $clientEncoding;
 			$this->responseContent = mb_convert_encoding($this->responseContent, $this->serverEncoding, $clientEncoding);
 		}
-		if($curlHandle) {
-			@curl_close($curlHandle);
+		if($curlHandle && is_resource($curlHandle)) {
+			curl_close($curlHandle);
 		}
 	}
 
@@ -215,10 +217,15 @@ class MultiRequest_Request {
 	}
 
 	public function getFailException() {
-		$responseCode = $this->getCode();
-		$successCodes = array(200, 204);
-		if(!in_array($responseCode, $successCodes)) {
-			return new MultiRequest_FailedResponse('Response failed with code "' . $responseCode . '"');
+		if($this->error) {
+			return new MultiRequest_FailedResponse('Response failed with error: ' . $this->error);
+		}
+		else {
+			$responseCode = $this->getCode();
+			$successCodes = array(200, 204);
+			if(!in_array($responseCode, $successCodes)) {
+				return new MultiRequest_FailedResponse('Response failed with code "' . $responseCode . '"');
+			}
 		}
 	}
 
