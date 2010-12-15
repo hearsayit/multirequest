@@ -28,7 +28,7 @@ class MultiRequest_Handler {
 	protected $isStarted;
 	protected $isStopped;
 	protected $activeRequests = array();
-	protected $requestingDelay = 0;
+	protected $requestingDelay = 0.01;
 
 	public function __construct() {
 		$this->queue = new MultiRequest_Queue();
@@ -41,7 +41,7 @@ class MultiRequest_Handler {
 	}
 
 	public function setRequestingDelay($milliseconds) {
-		$this->requestingDelay = $milliseconds * 1000;
+		$this->requestingDelay = $milliseconds / 1000;
 	}
 
 	public function onRequestComplete($callback) {
@@ -126,37 +126,36 @@ class MultiRequest_Handler {
 					}
 				}
 
-				while(CURLM_CALL_MULTI_PERFORM === curl_multi_exec($mcurlHandle));
+				while(CURLM_CALL_MULTI_PERFORM === curl_multi_exec($mcurlHandle, $activeThreads));
 
 				// check complete requests
-				if(curl_multi_select($mcurlHandle, 1) >= 0) {
-					while($completeCurlInfo = curl_multi_info_read($mcurlHandle)) {
-						$completeRequestId = MultiRequest_Request::getRequestIdByCurlHandle($completeCurlInfo['handle']);
-						$completeRequest = $this->activeRequests[$completeRequestId];
-						unset($this->activeRequests[$completeRequestId]);
-						curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
-						$completeRequest->initResponseDataFromHandler($this);
+				curl_multi_select($mcurlHandle, $this->requestingDelay);
+				while($completeCurlInfo = curl_multi_info_read($mcurlHandle)) {
+					$completeRequestId = MultiRequest_Request::getRequestIdByCurlHandle($completeCurlInfo['handle']);
+					$completeRequest = $this->activeRequests[$completeRequestId];
+					unset($this->activeRequests[$completeRequestId]);
+					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
+					$completeRequest->initResponseDataFromHandler($this);
 
-						// check if response code is 301 or 302 and follow location
-						$ignoreNotification = false;
-						$completeRequestCode = $completeRequest->getCode();
+					// check if response code is 301 or 302 and follow location
+					$ignoreNotification = false;
+					$completeRequestCode = $completeRequest->getCode();
 
-						if($completeRequestCode == 301 || $completeRequestCode == 302) {
-							$completeRequestOptions = $completeRequest->getCurlOptions();
-							if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
-								$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
-								$responseHeaders = $completeRequest->getResponseHeaders(true);
-								if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
-									$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
-									$completeRequest->reinitCurlHandle();
-									$this->pushRequestToQueue($completeRequest);
-									$ignoreNotification = true;
-								}
+					if($completeRequestCode == 301 || $completeRequestCode == 302) {
+						$completeRequestOptions = $completeRequest->getCurlOptions();
+						if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
+							$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
+							$responseHeaders = $completeRequest->getResponseHeaders(true);
+							if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
+								$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
+								$completeRequest->reinitCurlHandle();
+								$this->pushRequestToQueue($completeRequest);
+								$ignoreNotification = true;
 							}
 						}
-						if(!$ignoreNotification) {
-							$this->notifyRequestComplete($completeRequest);
-						}
+					}
+					if(!$ignoreNotification) {
+						$this->notifyRequestComplete($completeRequest);
 					}
 				}
 			}
