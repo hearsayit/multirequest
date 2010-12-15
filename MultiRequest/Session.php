@@ -30,9 +30,7 @@ class MultiRequest_Session {
 		$this->enableAutoReferer = $enableAutoReferer;
 		$this->requestsDelay = $requestsDelay;
 		$this->requestsDefaults = new MultiRequest_Defaults();
-
 		$this->cookiesFilepath = tempnam($cookiesBasedir, '_');
-		register_shutdown_function(array($this, 'clearCookie'));
 	}
 
 	/**
