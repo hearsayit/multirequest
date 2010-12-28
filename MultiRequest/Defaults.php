@@ -1,7 +1,12 @@
 <?php
 
+/**
+ * @see http://code.google.com/p/multirequest
+ * @author Barbushin Sergey http://www.linkedin.com/in/barbushin
+ *
+ */
 class MultiRequest_Defaults {
-	
+
 	protected $properties = array();
 	protected $methods = array();
 

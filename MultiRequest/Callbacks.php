@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * @see http://code.google.com/p/multirequest
+ * @author Barbushin Sergey http://www.linkedin.com/in/barbushin
+ *
+ */
 class MultiRequest_Callbacks {
 
 	protected $callbacks;

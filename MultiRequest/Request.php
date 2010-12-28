@@ -6,12 +6,12 @@
  *
  */
 class MultiRequest_Request {
-
+	
 	/**
 	 * @var MultiRequest_Callbacks
 	 */
 	protected $callbacks;
-
+	
 	protected $url;
 	protected $realUrl;
 	protected $curlHandle;
@@ -26,7 +26,7 @@ class MultiRequest_Request {
 	protected $responseHeadersList = array();
 	protected $responseContent;
 	protected $error;
-
+	
 	protected static $clientsEncodings;
 
 	public function __construct($url) {
@@ -105,13 +105,13 @@ class MultiRequest_Request {
 		$curlHandle = curl_init($this->url);
 		$curlOptions = $this->curlOptions;
 		$curlOptions[CURLINFO_HEADER_OUT] = true;
-
+		
 		if($this->headers) {
 			$curlOptions[CURLOPT_HTTPHEADER] = $this->headers;
 		}
 		if($this->postData) {
 			$postData = $this->postData;
-
+			
 			$clientEncoding = isset(self::$clientsEncodings[$this->getDomain()]) ? self::$clientsEncodings[$this->getDomain()] : $this->defaultClientEncoding;
 			if($clientEncoding != $this->serverEncoding) {
 				array_walk_recursive($postData, create_function('&$value', '$value = mb_convert_encoding($value, "' . $clientEncoding . '", "' . $this->serverEncoding . '");'));
@@ -120,7 +120,7 @@ class MultiRequest_Request {
 			$curlOptions[CURLOPT_POSTFIELDS] = $postData;
 			$this->addHeader('Content-Type:	application/x-www-form-urlencoded; charset=' . $clientEncoding);
 		}
-
+		
 		curl_setopt_array($curlHandle, $curlOptions);
 		return $curlHandle;
 	}
@@ -168,7 +168,7 @@ class MultiRequest_Request {
 		$this->curlInfo = curl_getinfo($curlHandle);
 		$this->error = curl_error($curlHandle);
 		$responseData = curl_multi_getcontent($curlHandle);
-
+		
 		$this->responseHeaders = substr($responseData, 0, curl_getinfo($curlHandle, CURLINFO_HEADER_SIZE));
 		$this->responseContent = substr($responseData, curl_getinfo($curlHandle, CURLINFO_HEADER_SIZE));
 		$clientEncoding = $this->detectClientCharset($this->getResponseHeaders());
@@ -183,7 +183,7 @@ class MultiRequest_Request {
 
 	public function notifyIsComplete(MultiRequest_Handler $handler) {
 		$this->callbacks->onComplete($this, $handler);
-
+		
 		$failException = $this->getFailException();
 		if($failException) {
 			$this->notifyIsFailed($failException, $handler);

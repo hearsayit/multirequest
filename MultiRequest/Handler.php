@@ -6,22 +6,22 @@
  *
  */
 class MultiRequest_Handler {
-
+	
 	/**
 	 * @var MultiRequest_RequestsDefaults
 	 */
 	protected $requestsDefaults;
-
+	
 	/**
 	 * @var MultiRequest_Callbacks
 	 */
 	protected $callbacks;
-
+	
 	/**
 	 * @var MultiRequest_Queue
 	 */
 	protected $queue;
-
+	
 	protected $connectionsLimit = 60;
 	protected $totalTytesTransfered;
 	protected $isActive;
@@ -105,13 +105,13 @@ class MultiRequest_Handler {
 		}
 		$this->isActive = true;
 		$this->isStarted = true;
-
+		
 		try {
-
+			
 			$this->mcurlHandle = $mcurlHandle = curl_multi_init();
-
+			
 			do {
-
+				
 				// send requests from queue to CURL
 				if(count($this->activeRequests) < $this->connectionsLimit) {
 					for($i = $this->connectionsLimit - count($this->activeRequests); $i > 0; $i --) {
@@ -125,9 +125,9 @@ class MultiRequest_Handler {
 						}
 					}
 				}
-
+				
 				while(CURLM_CALL_MULTI_PERFORM === curl_multi_exec($mcurlHandle, $activeThreads));
-
+				
 				// check complete requests
 				curl_multi_select($mcurlHandle, $this->requestingDelay);
 				while($completeCurlInfo = curl_multi_info_read($mcurlHandle)) {
@@ -136,11 +136,11 @@ class MultiRequest_Handler {
 					unset($this->activeRequests[$completeRequestId]);
 					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
 					$completeRequest->initResponseDataFromHandler($this);
-
+					
 					// check if response code is 301 or 302 and follow location
 					$ignoreNotification = false;
 					$completeRequestCode = $completeRequest->getCode();
-
+					
 					if($completeRequestCode == 301 || $completeRequestCode == 302) {
 						$completeRequestOptions = $completeRequest->getCurlOptions();
 						if(!empty($completeRequestOptions[CURLOPT_FOLLOWLOCATION])) {
@@ -163,17 +163,17 @@ class MultiRequest_Handler {
 		}
 		catch(Exception $exception) {
 		}
-
+		
 		$this->isActive = false;
-
+		
 		if($mcurlHandle && is_resource($mcurlHandle)) {
 			curl_multi_close($mcurlHandle);
 		}
-
+		
 		if(!empty($exception)) {
 			throw $exception;
 		}
-
+		
 		$this->callbacks->onComplete($this);
 	}
 }

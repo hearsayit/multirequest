@@ -6,17 +6,17 @@
  *
  */
 class MultiRequest_Session {
-
+	
 	/**
 	 * @var MultiRequest_RequestsDefaults
 	 */
 	protected $requestsDefaults;
-
+	
 	/**
 	 * @var MultiRequest_Callbacks
 	 */
 	protected $callbacks;
-
+	
 	protected $mrHandler;
 	protected $cookiesFilepath;
 	protected $lastRequest;
@@ -77,13 +77,13 @@ class MultiRequest_Session {
 			sleep($this->requestsDelay);
 		}
 		$request->onComplete(array($this, 'notifyRequestIsComplete'));
-
+		
 		$this->requestsDefaults->applyToRequest($request);
 		$request->setCookiesStorage($this->cookiesFilepath);
 		if($this->enableAutoReferer && $this->lastRequest) {
 			$request->setCurlOption(CURLOPT_REFERER, $this->lastRequest->getUrl());
 		}
-
+		
 		$this->mrHandler->pushRequestToQueue($request);
 		if($this->enableAutoStart) {
 			$this->mrHandler->start();

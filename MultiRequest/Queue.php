@@ -6,7 +6,7 @@
  *
  */
 class MultiRequest_Queue {
-
+	
 	protected $requests = array();
 
 	public function push(MultiRequest_Request $request) {
