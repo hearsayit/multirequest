@@ -3,7 +3,6 @@
 define('ROOT_DIR', dirname(dirname(__FILE__)));
 define('DOWNLOADS_DIR', dirname(__FILE__) . DIRECTORY_SEPARATOR . 'downloads');
 define('CONNECTIONS_LIMIT', 8);
-define('TIME_LIMIT', 100);
 
 function autoloadClasses($class) {
 	$filePath = ROOT_DIR . DIRECTORY_SEPARATOR . str_replace('_', DIRECTORY_SEPARATOR, $class) . '.php';
