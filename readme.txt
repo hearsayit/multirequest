@@ -10,4 +10,4 @@ Contact to developer (freelancer, looking for interesting web-projects):
 http://linkedin.com/in/barbushin
 
 Donate project development:
-http://web-grant.com/donation/primage
+http://web-grant.com/donation/multirequest
