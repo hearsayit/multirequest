@@ -124,9 +124,7 @@ class MultiRequest_Handler {
 				// send requests from queue to CURL
 				while(count($this->activeRequests) < $this->connectionsLimit) {
 					if(!$this->queue->count()) {
-					echo '?';
 						$this->notifyQueueIsEmpty();
-						echo $this->queue->count().'-';
 					}
 					$request = $this->queue->pop();
 					if($request) {
