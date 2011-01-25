@@ -18,7 +18,7 @@ class MultiRequest_Request {
 	protected $headers = array('Expect:');
 	protected $getData;
 	protected $postData;
-	protected $curlOptions = array(CURLOPT_TIMEOUT => 3600, CURLOPT_CONNECTTIMEOUT => 200, CURLOPT_FAILONERROR => true, CURLOPT_FRESH_CONNECT => true, CURLOPT_HEADER => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 10, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false, CURLOPT_FORBID_REUSE => true, CURLOPT_VERBOSE => true, CURLOPT_MAXCONNECTS => 1);
+	protected $curlOptions = array(CURLOPT_TIMEOUT => 3600, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FAILONERROR => true, CURLOPT_FRESH_CONNECT => true, CURLOPT_HEADER => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 10, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false, CURLOPT_FORBID_REUSE => true, CURLOPT_VERBOSE => true, CURLOPT_MAXCONNECTS => 1);
 	protected $curlInfo;
 	protected $serverEncoding = 'utf-8';
 	protected $defaultClientEncoding = 'utf-8';
@@ -29,10 +29,13 @@ class MultiRequest_Request {
 	
 	protected static $clientsEncodings;
 
-	public function __construct($url) {
+	public function __construct($url, $postData = null) {
 		$this->callbacks = new MultiRequest_Callbacks();
 		$this->url = $url;
 		$this->setUrl($url);
+		if($postData) {
+			$this->setPostData($postData);
+		}
 	}
 
 	public function setUrl($url) {
