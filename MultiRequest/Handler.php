@@ -48,21 +48,12 @@ class MultiRequest_Handler {
 		$this->callbacks->add(__FUNCTION__, $callback);
 		return $this;
 	}
-	
+
 	protected function notifyRequestComplete(MultiRequest_Request $request) {
 		$request->notifyIsComplete($this);
 		$this->callbacks->onRequestComplete($request, $this);
 	}
 
-	public function onEmptyQueue($callback) {
-		$this->callbacks->add(__FUNCTION__, $callback);
-		return $this;
-	}
-	
-	protected function notifyQueueIsEmpty() {
-		$this->callbacks->onEmptyQueue($this);
-	}
-	
 	/**
 	 * @return MultiRequest_Request
 	 */
@@ -105,7 +96,7 @@ class MultiRequest_Handler {
 
 	protected function sendRequestToMultiCurl($mcurlHandle, MultiRequest_Request $request) {
 		$this->requestsDefaults->applyToRequest($request);
-		curl_multi_add_handle($mcurlHandle, $request->getCurlHandle());
+		curl_multi_add_handle($mcurlHandle, $request->getCurlHandle(true));
 	}
 
 	public function start() {
@@ -122,17 +113,16 @@ class MultiRequest_Handler {
 			do {
 				
 				// send requests from queue to CURL
-				while(count($this->activeRequests) < $this->connectionsLimit) {
-					if(!$this->queue->count()) {
-						$this->notifyQueueIsEmpty();
-					}
-					$request = $this->queue->pop();
-					if($request) {
-						$this->sendRequestToMultiCurl($mcurlHandle, $request);
-						$this->activeRequests[$request->getId()] = $request;
-					}
-					else {
-						break;
+				if(count($this->activeRequests) < $this->connectionsLimit) {
+					for($i = $this->connectionsLimit - count($this->activeRequests); $i > 0; $i --) {
+						$request = $this->queue->pop();
+						if($request) {
+							$this->sendRequestToMultiCurl($mcurlHandle, $request);
+							$this->activeRequests[$request->getId()] = $request;
+						}
+						else {
+							break;
+						}
 					}
 				}
 				
