@@ -159,7 +159,7 @@ class MultiRequest_Request {
 		return $this->curlInfo['http_code'];
 	}
 
-	public function initResponseDataFromHandler(MultiRequest_Handler $handler) {
+	public function handleCurlResult() {
 		$curlHandle = $this->getCurlHandle();
 		$this->curlInfo = curl_getinfo($curlHandle);
 		$this->error = curl_error($curlHandle);
@@ -176,7 +176,7 @@ class MultiRequest_Request {
 			curl_close($curlHandle);
 		}
 	}
-
+	
 	public function notifyIsComplete(MultiRequest_Handler $handler) {
 		$this->callbacks->onComplete($this, $handler);
 		
@@ -223,6 +223,16 @@ class MultiRequest_Request {
 				return new MultiRequest_FailedResponse('Response failed with code "' . $responseCode . '"');
 			}
 		}
+	}
+	
+	public function get() {
+		curl_exec($this->getCurlHandle(true));
+		$this->handleCurlResult();
+		return $this->getContent();
+	}
+	
+	public function __toString() {
+		return $this->get();
 	}
 
 	public function getCurlInfo() {

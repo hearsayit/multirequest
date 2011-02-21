@@ -135,7 +135,7 @@ class MultiRequest_Handler {
 					$completeRequest = $this->activeRequests[$completeRequestId];
 					unset($this->activeRequests[$completeRequestId]);
 					curl_multi_remove_handle($mcurlHandle, $completeRequest->getCurlHandle());
-					$completeRequest->initResponseDataFromHandler($this);
+					$completeRequest->handleCurlResult();
 					
 					// check if response code is 301 or 302 and follow location
 					$ignoreNotification = false;
