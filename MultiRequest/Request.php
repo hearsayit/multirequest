@@ -150,7 +150,12 @@ class MultiRequest_Request {
 		}
 		return $this->curlHandle;
 	}
-
+        
+        public function reinitCurlHandle()
+        {
+                $this->curlHandle = $this->initCurlHandle();
+        }
+        
 	public function getTime() {
 		return $this->curlInfo['total_time'];
 	}

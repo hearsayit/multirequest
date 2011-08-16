@@ -147,7 +147,15 @@ class MultiRequest_Handler {
 							$completeRequest->_permanentlyMoved = empty($completeRequest->_permanentlyMoved) ? 1 : $completeRequest->_permanentlyMoved + 1;
 							$responseHeaders = $completeRequest->getResponseHeaders(true);
 							if($completeRequest->_permanentlyMoved < 5 && !empty($responseHeaders['Location'])) {
-								$completeRequest->setUrl($completeRequest->getBaseUrl() . $responseHeaders['Location']);
+                                                                // figure out whether we're dealign with an absolute or relative redirect
+                                                                $redirectedUrl = null;
+                                                                $scheme = parse_url($responseHeaders['Location'], PHP_URL_SCHEME);
+                                                                if ($scheme === null) {
+                                                                    $redirectedUrl = $completeRequest->getBaseUrl() . $responseHeaders['Location'];
+                                                                } else {
+                                                                    $redirectedUrl = $responseHeaders['Location'];
+                                                                }
+								$completeRequest->setUrl($redirectedUrl);
 								$completeRequest->reinitCurlHandle();
 								$this->pushRequestToQueue($completeRequest);
 								$ignoreNotification = true;
